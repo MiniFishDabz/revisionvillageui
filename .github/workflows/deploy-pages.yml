@@ -1,0 +1,69 @@
+name: Sync upstream and deploy Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Check upstream every night. A failed sync does NOT replace the last good Pages deployment.
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: ${{ vars.UPSTREAM_REPO || 'https://git.pirateib.sh/pirateIB/village.git' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout UI repository
+        uses: actions/checkout@v4
+
+      - name: Install Git LFS
+        run: |
+          git lfs install
+          git lfs version
+
+      - name: Clone latest upstream Village source
+        run: |
+          rm -rf .upstream
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 "$UPSTREAM_REPO" .upstream
+          git -C .upstream lfs pull
+          echo "UPSTREAM_COMMIT=$(git -C .upstream rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Verify LFS content was downloaded
+        run: |
+          if head -n 1 .upstream/src/main.js | grep -q 'git-lfs.github.com/spec/v1'; then
+            echo 'main.js is still an LFS pointer; refusing to deploy a broken site.'
+            exit 1
+          fi
+
+      - name: Build themed site without modifying upstream data
+        run: node scripts/build-site.mjs
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
