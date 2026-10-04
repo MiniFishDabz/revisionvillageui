@@ -17,10 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  UPSTREAM_BASE: https://git.pirateib.sh
-  UPSTREAM_OWNER: pirateIB
-  UPSTREAM_NAME: village
-  UPSTREAM_REF: master
+  UPSTREAM_SITE_ORIGINS: https://village.pirateib.su,https://village.pirateib.sh
   UPSTREAM_REPO: https://git.pirateib.sh/pirateIB/village
 
 jobs:
@@ -35,15 +32,16 @@ jobs:
         with:
           node-version: 22
 
-      - name: Download latest Village source through Gitea API
+      - name: Sync latest Village data from public deployed site
         run: node scripts/sync-upstream.mjs
 
-      - name: Verify upstream files are real LFS contents
+      - name: Verify upstream files are real contents
         run: |
           test -f .upstream/src/index.html
           test -f .upstream/src/main.js
+          test "$(find .upstream/src -name '*.questionData.js' | wc -l)" -gt 0
           if head -n 1 .upstream/src/main.js | grep -q 'git-lfs.github.com/spec/v1'; then
-            echo 'main.js is still an LFS pointer; refusing to deploy a broken site.'
+            echo 'main.js is an LFS pointer; refusing to deploy a broken site.'
             exit 1
           fi
 
